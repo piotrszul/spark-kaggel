@@ -18,7 +18,7 @@ import java.io.Closeable
 import java.io.ObjectInputStream
 import java.io.FileInputStream
 
-object FitNa {
+object KaggelSplit {
   
   def use[F <: Closeable,T](file:F)(handler:(F=>T)):T = {
     try {
@@ -36,26 +36,9 @@ object FitNa {
     
     val sc = new SparkContext(new SparkConf().setAppName("KaggelApp"))
     val in = sc.textFile(args(0))
-    val input  = in.map(_.split(","))
-    val header = input.first().toList
-    val data = input.filter(t => !t(0).startsWith("Id"))    
-    println(data.count())
-    
-    val df = data.map{t => 
-      val padded = t.iterator.padTo(header.length, "")
-      val vals = header.iterator.zip(padded)
-      vals.map{ case (col, str) => 
-        if (str.isEmpty()) null else if (col.startsWith("C")) java.lang.Long.parseLong(str, 16) else str.toLong 
-      }.toList
-    }
-    
-     
-   val model:NaModel = use(new ObjectInputStream(new FileInputStream("na.model"))) { f =>
-     f.readObject().asInstanceOf[NaModel]
-   }
-
-   val result = model.fit(df)
-   result.map(_.mkString(",")).saveAsTextFile(args(1))
-   
+    val data = in.filter(t => !t.startsWith("Id"))
+    val split = data.randomSplit(Array(0.85, 0.15), 100)
+    split(0).saveAsTextFile(args(0)+ "_1")
+    split(0).saveAsTextFile(args(1)+ "_2")
   }
 } 
