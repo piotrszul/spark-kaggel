@@ -7,17 +7,13 @@ import java.io.ObjectOutputStream
 import java.io.FileOutputStream
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.linalg.Vector
 import org.apache.spark.mllib.classification.LogisticRegressionWithSGD
 import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
 import org.apache.spark.mllib.classification.SVMWithSGD
 import scala.util.Sorting
 import java.util.Arrays
-import org.apache.spark.mllib.classification.LogisticRegressionModel
-import org.apache.spark.rdd.RDD
-import org.apache.spark.mllib.Ex
 
-object KaggelLog {
+object KaggelHashLog {
   
   def add(t1:(Long,Long), t2:(Long,Long)):(Long,Long) = (t1._1 + t2._1, t1._2 + t2._2)
   def addd(t1:(Long,Double), t2:(Long,Double)):(Long,Double) = (t1._1 + t2._1, t1._2 + t2._2)
@@ -41,36 +37,19 @@ object KaggelLog {
       }.toList
     }
     
-    val mapping = df.flatMap{ t => 
-      t.drop(2).zipWithIndex.filter(_._2 >= 12).map(_.swap)
-    }.distinct.groupByKey.map{ case (k,v) => 
-      val a=v.asInstanceOf[Iterable[Long]].toArray
-      Sorting.quickSort(a)
-      (k,a)
-    }
-    .collect()
-    val dict = mapping.filter(_._2.length < 1000).toMap
-    
-    var count = 0
-    val index = dict.map({case (i, a) => (i, a.length)}).toList.sortBy(_._1).map{
-      t => val ag = count; count+= t._2; 
-      (t._1, ag)
-    }.toMap
-    
-    
-    //dict.foreach(t => Sorting.quickSort(t._2.asInstanceOf[Array[Int]]))
-        
-    val len = 12 //+ dict.map(_._2.length).sum
     val split = df.randomSplit(Array(0.8,0.2), 10)
     
+    val b = 26
+    val len = 30 + (2<<b)
+    println(2<<b, len)
     
     val train = split(0).map{t => 
-      new LabeledPoint(if (t(1).asInstanceOf[Long]==1) 1.0 else 0,
+      new LabeledPoint(t(1).asInstanceOf[Long].toDouble,
           Vectors.sparse(len, 
               t.drop(2).take(len).zipWithIndex.filter(_._1 != null)
-              .filter(t => t._2 < 12 || index.get(t._2).isDefined)
               .map{ case (v:Long,i) => 
-                if (i< 13) (i,v.toDouble) else (12 + index(i) + Arrays.binarySearch(dict(i),v), 1.0)
+                //println(i, v, (30 + (v.toInt & ((2<<b)-1))))
+                if (i< 13) (i,v.toDouble) else ((30 + ((v.toInt+i)  & ((2<<b)-1))), 1.0)
              }
           )           
       )
@@ -78,12 +57,11 @@ object KaggelLog {
  
     
     val test = split(1).map{t => 
-      new LabeledPoint(if (t(1).asInstanceOf[Long]==1) 1.0 else -1.0,
+      new LabeledPoint(t(1).asInstanceOf[Long].toDouble,
           Vectors.sparse(len, 
               t.drop(2).take(len).zipWithIndex.filter(_._1 != null)
-              .filter(t => t._2 < 12 || index.get(t._2).isDefined)
               .map{ case (v:Long,i) => 
-                if (i< 13) (i,v.toDouble) else (12 + index(i) + Arrays.binarySearch(dict(i),v), 1.0)
+                if (i< 13) (i,v.toDouble) else ((30 + ((v.toInt+i)  & ((2<<b)-1))), 1.0)
              }
           )
       )
@@ -92,16 +70,12 @@ object KaggelLog {
     println(train.count)   
     println(test.count)   
     val model = LogisticRegressionWithSGD.train(train, 100)
-    println("Weights")
     println(model.weights)
     
-    //val result = Ex.predictProb(model,test.map(_.features)).zip(test.map(_.label))
+    val result = model.predict(test.map(_.features)).zip(test.map(_.label))
     
-    println("Result")
-    //result.take(1000).foreach(println)
-    
-    //val metrics = new BinaryClassificationMetrics(result)
-    //println(metrics.recallByThreshold.collect().toList)
-    //println(metrics.precisionByThreshold.collect().toList)
+    val metrics = new BinaryClassificationMetrics(result)
+    println(metrics.recallByThreshold.collect().toList)
+    println(metrics.precisionByThreshold.collect().toList)
   }
 } 
