@@ -27,13 +27,23 @@ object KaggelLogLearn {
     
     val sc = new SparkContext(new SparkConf().setAppName("KaggelApp"))
 
+    /*
+     *     [,1] [,2]
+[1,]  1.0  0.0
+[2,]  0.5  0.5
+[3,]  0.0  1.0
+[4,]  2.0  0.0
+[5,]  1.0  1.0
+[6,]  0.0  2.0
+     */
+    
     val train  = sc.parallelize(List(
-    	new LabeledPoint(0.0, Vectors.dense(Array(1.0, 0.5))),
-    	new LabeledPoint(0.0, Vectors.dense(Array(2.0, -100.0))),
-    	new LabeledPoint(0.0, Vectors.dense(Array(3.0, 1))),
-    	new LabeledPoint(1.0, Vectors.dense(Array(1.0, -0.1))),
-    	new LabeledPoint(1.0, Vectors.dense(Array(2.0, 1.4))),    	
-    	new LabeledPoint(1.0, Vectors.dense(Array(3.0, -0.5)))
+    	new LabeledPoint(0.0, Vectors.dense(Array(1.0, 0.0))),
+    	new LabeledPoint(0.0, Vectors.dense(Array(0.5, 0.5))),
+    	new LabeledPoint(0.0, Vectors.dense(Array(0.0, 1.0))),
+    	new LabeledPoint(1.0, Vectors.dense(Array(2.0, 0.0))),
+    	new LabeledPoint(1.0, Vectors.dense(Array(1.0, 1.0))),    	
+    	new LabeledPoint(1.0, Vectors.dense(Array(0.0, 2.0)))
     )) 
 
     val test  = sc.parallelize(List(
@@ -44,9 +54,14 @@ object KaggelLogLearn {
     
     println(train.count)   
     println(test.count)   
-    val model = LogisticRegressionWithSGD.train(train, 100)
+    
+    val cls = new LogisticRegressionWithSGD()
+    cls.setIntercept(true)
+    val model = cls.run(train)
+    //val model = LogisticRegressionWithSGD.train(train,100)
     println("Weights")
     println(model.weights)
+    println(model.intercept)
     
     val result = Ex.predictProb(model,test.map(_.features)).zip(test.map(_.label))
     
