@@ -38,7 +38,7 @@ object KaggelSplit {
     val in = sc.textFile(args(0))
     val data = in.filter(t => !t.startsWith("Id"))
     val split = data.randomSplit(Array(0.85, 0.15), 100)
-    split(0).saveAsTextFile(args(0)+ "_1")
-    split(1).saveAsTextFile(args(0)+ "_2")
+    split(0).coalesce(1,true).saveAsTextFile(args(0)+ "_1")
+    split(1).coalesce(1,true).saveAsTextFile(args(0)+ "_2")
   }
 } 

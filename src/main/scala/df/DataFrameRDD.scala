@@ -116,7 +116,7 @@ object DataFrame {
   def toVW(rdd: RDD[List[Any]], labelIndex:Int,tagIndex:Int,cols: Seq[ColumnDef]) = rdd.map(DataFrame.rowToVW(labelIndex,tagIndex, cols))
   
   def rowToVW(labelIndex:Int,tagIndex:Int,cols: Seq[ColumnDef])(d:Seq[Any]):String  = {
-      "" + d(labelIndex) + " '" + d(tagIndex).asInstanceOf[Long].toHexString + " " +
+      "" + (if (d(labelIndex).asInstanceOf[Double]  > 0) 1.0 else -1.0 ) + " '" + d(tagIndex).asInstanceOf[Long].toHexString + " " +
         d.zipWithIndex
         .filter { case (v, i) => i != labelIndex && i != tagIndex }
         .map { case (v, i) => (v, cols(i)) }
@@ -208,21 +208,23 @@ object DataFrameApp {
 
     
     df.rdd.cache()
+/*
     val summary = df.summary()    
     summary.print()
     
     val imputer = new Imputer()
-    imputer.fit(df)
-    val idf = imputer.predict(df)
+    imputer.summary = summary
+    //imputer.fit(df)
+    //val idf = imputer.predict(df)
    
     
-    val kidf = idf.project(i => (i < 2) || (summary.summary(i) match {
+    val kidf = df.project(i => (i < 2) || (summary.summary(i) match {
       case CategoricalSummary(_,level) => level < args(2).toInt
       case _ => true
     }))
+ */   
     
-    
-    kidf.toVW("Label","Id").coalesce(1,true).saveAsTextFile(args(1))
+    df.toVW("Label","Id").coalesce(1,true).saveAsTextFile(args(1))
  /*   
     val levels = df.countLevels()
     val projDF = df.project(i => levels.get(i).isEmpty || levels(i) < 1000)
