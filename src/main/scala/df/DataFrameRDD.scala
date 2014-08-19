@@ -224,7 +224,7 @@ object DataFrameApp {
     }))
  */   
     
-    df.toVW("Label","Id").coalesce(1,true).saveAsTextFile(args(1))
+    df.project(i=> i<15).toVW("Label","Id").coalesce(1,true).saveAsTextFile(args(1))
  /*   
     val levels = df.countLevels()
     val projDF = df.project(i => levels.get(i).isEmpty || levels(i) < 1000)
