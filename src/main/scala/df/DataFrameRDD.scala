@@ -117,16 +117,28 @@ object DataFrame {
   
   def rowToVW(labelIndex:Int,tagIndex:Int,cols: Seq[ColumnDef])(d:Seq[Any]):String  = {
       "" + (if (d(labelIndex).asInstanceOf[Double]  > 0) 1.0 else -1.0 ) + " '" + d(tagIndex).asInstanceOf[Long].toHexString + " " +
+        "|Num " + 
+      	d.zipWithIndex
+        .filter { case (v, i) => i != labelIndex && i != tagIndex }
+        .map { case (v, i) => (v, cols(i)) }
+        .filter { case (v, c) => !c.varType.isNaN(v) && !c.isCategorical}
+        .map {
+          case (v, c) => c.varType match {
+            case NumericalVarType() => c.name + ":" + v
+          }
+        }.mkString(" ") + " |Cats " + 
         d.zipWithIndex
         .filter { case (v, i) => i != labelIndex && i != tagIndex }
         .map { case (v, i) => (v, cols(i)) }
-        .filter { case (v, c) => !c.varType.isNaN(v) }
+        .filter { case (v, c) => !c.varType.isNaN(v) && c.isCategorical}
         .map {
           case (v, c) => c.varType match {
-            case NumericalVarType() => "| " + c.name + ":" + v
-            case CategoricalVarType() => "|" + c.name + " _" + v.asInstanceOf[Long].toHexString
+            case CategoricalVarType() => "_" + v 
           }
-        }.mkString(" ")    
+        }.mkString(" ") 
+
+  //            case CategoricalVarType() => "|" + c.name + " _" + v.asInstanceOf[Long].toHexString
+
   }
   
   def countLevelsInt(cols: Seq[ColumnDef], rdd: RDD[List[Any]]):Map[Int,Long]  = {
@@ -207,7 +219,22 @@ object DataFrameApp {
     };
 
     
-    df.rdd.cache()
+    val ns = df.mins()
+    
+    val rdd = df.rdd.map{l =>
+    	l.zipWithIndex.map{ case (v, i) =>
+    		if (i>1 && i< 15) {
+    		  val s = ns(i)
+    		  val dff = v.asInstanceOf[Double]
+    		  val df = if (!dff.isNaN()) dff else 0.0
+    		  val mi = math.log(1) 
+    		  val ma  = math.log(s.max - s.min +1)
+    		  (math.log(df-s.min + 1)-mi)/(ma-mi)    		  
+    		} else v;
+    	}
+    } 
+    
+    val dff = new DataFrame(df.cols, rdd)
 /*
     val summary = df.summary()    
     summary.print()
@@ -224,7 +251,7 @@ object DataFrameApp {
     }))
  */   
     
-    df.project(i=> i<15).toVW("Label","Id").coalesce(1,true).saveAsTextFile(args(1))
+    dff.toVW("Label","Id").coalesce(1,true).saveAsTextFile(args(1))
  /*   
     val levels = df.countLevels()
     val projDF = df.project(i => levels.get(i).isEmpty || levels(i) < 1000)
