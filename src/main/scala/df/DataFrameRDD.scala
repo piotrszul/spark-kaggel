@@ -7,6 +7,9 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
 import scala.reflect.ClassTag
 
+import DataFrame._
+import utils.Utils
+
 case class NumSummary(var min:Double, var max:Double, var sum:Double, var count:Long) {
   def this(v: Double) = this(v,v,v,1L)
 }
@@ -206,8 +209,6 @@ class Imputer {
   def predict(df:DataFrame):DataFrame = Imputer.predict(df.cols, df.rdd,summary)
 }
 
-import DataFrame._
-
 object DataFrameApp {
 
   def main(args: Array[String]) = {
@@ -219,12 +220,12 @@ object DataFrameApp {
     };
 
     
-    val ns = df.mins()
+    val summary:Summary = if (args.length >2) Utils.readObject(args(2)) else df.summary()
     
     val rdd = df.rdd.map{l =>
     	l.zipWithIndex.map{ case (v, i) =>
     		if (i>1 && i< 15) {
-    		  val s = ns(i)
+    		  val s = summary.summary(i).asInstanceOf[NumericalSummary]
     		  val dff = v.asInstanceOf[Double]
     		  val df = if (!dff.isNaN()) dff else 0.0
     		  val mi = math.log(1) 
