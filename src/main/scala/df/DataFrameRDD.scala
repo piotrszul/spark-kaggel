@@ -94,7 +94,7 @@ class DataFrame(val cols: Seq[ColumnDef], val rdd: RDD[List[Any]]) {
   }
 
   def toVW(label: ColRef, tag: ColRef): RDD[String] = DataFrame.toVW(rdd,resolveRef(label),resolveRef(tag), cols)
-  
+    
   def countLevels():Map[Int,Long]  = DataFrame.countLevelsInt(cols,rdd)
   def modes():Map[Int,(Any,Long)]  = DataFrame.modesInt(cols,rdd)
   def mins()  = DataFrame.minsInt(cols,rdd)

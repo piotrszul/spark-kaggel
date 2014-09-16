@@ -2,6 +2,8 @@ import AssemblyKeys._ // put this at the top of the file
 
 assemblySettings
 
+assemblyOption in assembly ~= { _.copy(includeScala = false) }
+
 name := "spark-kaggel"
 
 version := "1.0"
@@ -10,9 +12,11 @@ scalaVersion := "2.10.2"
 
 // copied from scalding's build.sbt
 
-libraryDependencies += "org.apache.spark" % "spark-core_2.10" % "1.0.1" withSources()
+libraryDependencies += "org.apache.spark" % "spark-core_2.10" % "1.0.1" % "provided"
 
-libraryDependencies += "org.apache.spark" % "spark-mllib_2.10" % "1.0.1" withSources()
+libraryDependencies += "org.apache.spark" % "spark-mllib_2.10" % "1.0.1" % "provided" 
+
+libraryDependencies += "it.unimi.dsi" % "fastutil" % "6.5.15"
 
 javacOptions ++= Seq("-source", "1.6", "-target", "1.6")
 

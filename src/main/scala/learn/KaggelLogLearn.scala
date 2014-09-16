@@ -37,15 +37,16 @@ object KaggelLogLearn {
 [6,]  0.0  2.0
      */
     
-    val train  = sc.textFile("data/test_2-1.csv").filter(!_.startsWith("\""))
+    
+    val train  = sc.textFile("data/wisc_train_all.csv")
     	.map(_.split(",").map(_.toDouble).toList).map(t=>new LabeledPoint(t(0),
-    			Vectors.dense(t.drop(1).take(2).toArray)
-    	))
+    			Vectors.dense(t.drop(1).toArray)
+    	)).cache()
 
-    val test  = sc.parallelize(List(
-    	new LabeledPoint(1.0, Vectors.dense(Array(0.0,10.0))),
-    	new LabeledPoint(0.0, Vectors.dense(Array(1.0,-5.0)))
-    )) 
+    val test  = sc.textFile("data/wisc_test_all.csv")
+    	.map(_.split(",").map(_.toDouble).toList).map(t=>new LabeledPoint(t(0),
+    			Vectors.dense(t.drop(1).toArray)
+    ))
     
     
     println(train.count)   
@@ -53,8 +54,8 @@ object KaggelLogLearn {
     
     val cls = new LogisticRegressionWithSGD()
     cls.setIntercept(true)
-    cls.optimizer.setStepSize(2.0)
-    cls.optimizer.setNumIterations(500)
+    cls.optimizer.setStepSize(100.0)
+    cls.optimizer.setNumIterations(2000)
     val model = cls.run(train)
     //val model = LogisticRegressionWithSGD.train(train,100)
     println("Weights")
@@ -62,10 +63,19 @@ object KaggelLogLearn {
     println(model.intercept)
     
     
-    val result = Ex.predictProb(model,train.map(_.features)).zip(train.map(_.label))
+    val result = Ex.predictProb(model,test.map(_.features)).zip(test.map(_.label))
     
-    println("Result")
-    result.take(10).foreach(println)
+    //println("Result")
+    //result.take(100).foreach(println)
+    
+    val epsilon = 1e-5
+    val logLoss = result.map({
+      case (p,a) =>
+        val mp = math.min(math.max(p,epsilon), 1-epsilon)
+        -math.log(mp)*a-math.log(1-mp)*(1-a)}).mean()
+    
+    println("Log lodss: " + logLoss) 
+        
     /*
     val metrics = new BinaryClassificationMetrics(result)
     println(metrics.recallByThreshold.collect().toList)
