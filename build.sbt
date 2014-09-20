@@ -18,6 +18,10 @@ libraryDependencies += "org.apache.spark" % "spark-mllib_2.10" % "1.0.1" % "prov
 
 libraryDependencies += "it.unimi.dsi" % "fastutil" % "6.5.15"
 
+libraryDependencies += "org.apache.commons" % "commons-math3" % "3.3"
+
+libraryDependencies += "com.github.fommil.netlib" % "all" % "1.1.2"
+
 javacOptions ++= Seq("-source", "1.6", "-target", "1.6")
 
 // Invocation exception if we try to run the tests in parallel

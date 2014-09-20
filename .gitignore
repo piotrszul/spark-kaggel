@@ -7,3 +7,4 @@ target
 project/project
 project/target
 *.model
+/bin

@@ -209,8 +209,17 @@ class Imputer {
   def predict(df:DataFrame):DataFrame = Imputer.predict(df.cols, df.rdd,summary)
 }
 
+trait AbstractRow 
+
+class Row(val l:List[Any]) extends AnyVal {
+	def getLong(i:Int):Long = l(i).asInstanceOf[Long]
+	def getDouble(i:Int):Double = l(i).asInstanceOf[Double]
+}
+
 object DataFrameApp {
 
+  implicit def l2Row(l:List[Any])=new  Row(l)
+  
   def main(args: Array[String]) = {
 
     val sc = new SparkContext(new SparkConf().setAppName("KaggelApp"))

@@ -15,7 +15,6 @@ import it.unimi.dsi.fastutil.longs.Long2LongMap
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap
 import df.ColumnDef
 import df.CategoricalVarType
-import Helpers._
 import df.NumericalSummary
 import org.apache.spark.rdd.RDD
 import org.apache.spark.mllib.regression.LabeledPoint
@@ -23,121 +22,29 @@ import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.classification.LogisticRegressionWithSGD
 import org.apache.spark.mllib.Ex
 import ml.Eval
-
-
-object Helpers {
-  def categorical[T](f: (Long, Int) => Long)(implicit cols: Seq[ColumnDef]): List[Any] => List[Any] = {
-    return { l =>
-      l
-        .zipWithIndex
-        .map {
-          case (v, i) =>
-            if (i> 0 && cols(i).isCategorical) f(v.asInstanceOf[Long], i) else v
-        }
-    }
-  }
-   def numerical[T](f: (Double, Int) => Double)(implicit cols: Seq[ColumnDef]): List[Any] => List[Any] = {
-    return { l =>
-      l
-        .zipWithIndex
-        .map {
-          case (v, i) =>
-            if (!cols(i).isCategorical) f(v.asInstanceOf[Double], i) else v
-        }
-    }
-  }
-
-  def numericalWithType[T](f: (Double, ColumnDef) => Double)(implicit cols: Seq[ColumnDef]): List[Any] => List[Any] = {
-    return { l =>
-      l
-        .zip(cols)
-        .map {
-          case (v, c) =>
-            if (!c.isCategorical) f(v.asInstanceOf[Double], c) else v
-        }
-    }
-  }
-
-}
-
-trait Processor  {
-  def fit(df: DataFrame)
-  def transform(df: DataFrame):DataFrame
-}
-
-object XXX {
-  def fillNa(cols:Seq[ColumnDef], rdd:RDD[List[Any]], naval:Double): DataFrame =  {
-	  implicit val columns = cols
-	  new DataFrame(cols, rdd.map(numericalWithType { case (v,c) => if (c.varType.isNaN(v)) naval else v }))
-  }
-  def minMaxScaler(cols:Seq[ColumnDef], rdd:RDD[List[Any]],summary:Map[Int, NumericalSummary]):DataFrame = {
-	  implicit val columns = cols
-	  new DataFrame( cols, rdd.map(numerical { case (v,i) => val s = summary(i); (v-s.min)/(s.max-s.min) }))    
-  }
-}
-
-class FillNa(naval: Double) extends Processor {
-  def fit(f: DataFrame) {}
-  def transform(df: DataFrame):DataFrame = XXX.fillNa(df.cols, df.rdd, naval)
-}
-
-class MinMaxScaler extends Processor {
- 
-  var  summary:Map[Int, NumericalSummary] = null
-  
-  def fit(df: DataFrame) = {
-    summary = df.mins()
-  }
-  def transform(df: DataFrame):DataFrame = XXX.minMaxScaler(df.cols, df.rdd, summary)
-}
-
-class Pipe(elements:Seq[Processor]) extends Processor {
-  def fit(df: DataFrame) = elements.foreach(_.fit(df)) 
-  def transform(df: DataFrame):DataFrame = {
-    var result = df
-    elements.foreach(e => result = e.transform(result))
-    result
-  }
-  
-}
-
+import org.apache.commons.math3.analysis._
+import org.apache.commons.math3.optim.nonlinear.scalar.GoalType
+import org.apache.commons.math3.optim.MaxEval
+import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction
+import org.apache.commons.math3.optim.univariate.SearchInterval
+import org.apache.spark.mllib.optimization.SquaredL2Updater
+import scala.collection.JavaConverters._
+import scala.math.Numeric
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.mllib.linalg.SparseVector
+import ml.GlobalIndexer
+import ml.Pipe
+import ml.FillNa
+import ml.LogScaler
+import ml.MinMaxScaler
+import ml.FilterLevles
 
 
 
 object DataFrameWork {
 
-  def reindex(s: LongSet): Long2LongMap = {
-    var index = 0L;
-    val result = new Long2LongOpenHashMap()
-    result.defaultReturnValue(-1L)
-    val it = s.iterator()
-    while (it.hasNext()) {
-      result.add(it.next(), index)
-      index += 1
-    }
-    return result
-  }
-
-  def optimize(l1:Double,p1:Double, l2:Double, p2:Double, tresh:Double)(goal:Double=>Double):Double = {
-    if (l2-l1 > tresh) {	    
-	    val lm = (l1+l2)/2
-	    val vm = goal(lm)
-	    if (p1< p2) {
-	      optimize(l1,p1,lm,vm, tresh)(goal)
-	    } else {
-	      optimize(lm,vm, l2,p2, tresh)(goal)      
-	    }
-    } else {
-      if (p1 < p2) l1 else l2
-    }
-  } 
   
-  def optimize(l1:Double, l2:Double, thresh:Double)(goal: Double => Double):Double = {
-    val p1 = goal(l1)
-    val p2 = goal(l2)
-    optimize(l1,p1,l2,p2,thresh)(goal)
-  }
-
+   
   def main(args: Array[String]) {
     val sc = new SparkContext(new SparkConf().setAppName("KaggelApp"))
     val df = DataFrame.fromCSV(sc.textFile(args(0)))(KaggelIO.typeGuesser)
@@ -165,39 +72,125 @@ object DataFrameWork {
 */
     val mapped = rdd
     val mappedDf = new DataFrame(cols,mapped)
+    
+    val indexer = new GlobalIndexer()
     val preprocess = new Pipe(List(
-        new FillNa(0),new MinMaxScaler()
+        new FillNa(0), new LogScaler(), new MinMaxScaler(), new FilterLevles(15), indexer
         ))
     
     preprocess.fit(mappedDf)
     val yy = preprocess.transform(mappedDf)
+  
+    yy.rdd.take(10).foreach(println)
+    //exit(0)
+    val size = indexer.size
+    println("Size: " + size)
     
+    val hashSize = 1<<12
+    val hashMask = hashSize - 1 
+
+/*    
+    val dataPre = yy.rdd.map{ l=> 
+      new LabeledPoint(l(1).asInstanceOf[Double], 
+          Vectors.sparse(hashSize + 13, l.drop(2).zipWithIndex.filter({ case (v,i) => (i< 13 || v.asInstanceOf[Long] >0)  }
+            ).map({ case (v,i)=>
+            if (i< 13) (i,v.asInstanceOf[Double]) else (13 + (v.hashCode()&hashMask).toInt,if ((v.hashCode()&1) == 1) 1.0 else -1.0)
+          }).groupBy(_._1).map({case (i,l) => (i,l.map(_._2).sum)}).filter(_._2 != 0).toSeq)
+          ) 
+      }
+      
+      */
+    val dataPre = yy.rdd.map{ l=> 
+      new LabeledPoint(l(1).asInstanceOf[Double], 
+          Vectors.sparse(size  + 13, l.drop(2).zipWithIndex.filter({ case (v,i) => (i< 13 || v.asInstanceOf[Long] >=0)  }
+            ).map({ case (v,i)=>
+            if (i< 13) (i,v.asInstanceOf[Double]) else (13 + v.asInstanceOf[Long].toInt,if ((v.hashCode()&1) == 1) 1.0 else -1.0)
+          }).toSeq)
+          ) 
+      }
+ 
+    val data = if (args.length > 1) dataPre.coalesce(args(1).toInt) else dataPre
+    //val data = yy.rdd
+    val split = data.randomSplit(Array(0.75, 0.25), 3334)
+    val train = split(0)
+    val test = split(1)
     
-    
-    
-    val train = yy.rdd.map{ l=> new LabeledPoint(l(1).asInstanceOf[Double], Vectors.dense(l.drop(2).take(10).map(_.asInstanceOf[Double]).toArray)) }
-    
+    /*
     train.cache()
     println(train.count())
+    test.cache()
+    println(test.count())
+    */
     
+    val trainTxt = train.map{l =>
+      val sv:SparseVector = l.features.asInstanceOf[SparseVector]
+      (if (l.label >0) 1 else -1).toString + " | " + sv.indices.toIterator
+      	.zipWithIndex.map(p => (p._1,sv.values(p._2))).map(t => t._1.toString + ":"+ t._2.toString).mkString(" ")
+    }  
+    val testTxt = test.map{l =>
+      val sv:SparseVector = l.features.asInstanceOf[SparseVector]
+      (if (l.label >0) 1 else -1).toString + " | " + sv.indices.toIterator
+      	.zipWithIndex.map(p => (p._1,sv.values(p._2))).map(t => t._1.toString + ":"+ t._2.toString).mkString(" ")
+    }  
     
- 
+    trainTxt.saveAsTextFile("target/trainTxt")
+    testTxt.saveAsTextFile("target/testTxt")
+    
+    //new DataFrame(yy.cols, train).toVW("Label","Id").saveAsTextFile("target/train_01_vw")
+    //new DataFrame(yy.cols, test).toVW("Label","Id").saveAsTextFile("target/test_01_vw")
+    
+    exit(0)
+ /*   
+    train.take(10).foreach(println)
+    
     
     val cls = new LogisticRegressionWithSGD()
     cls.setIntercept(true)
     cls.optimizer.setNumIterations(100)
+    cls.optimizer.setUpdater(new SquaredL2Updater())
+    cls.optimizer.setRegParam(6.38021917904243E-4)
+    cls.optimizer.setStepSize(20.976103)
     
     def goal(a:Double):Double = {
-	    cls.optimizer.setStepSize(a)    
-	    val model = cls.run(train)
-	    val pred = Ex.predictProb(model,train.map(_.features)).zip(train.map(_.label))    
-	    val logLoss = Eval.logLogs(pred)
-	    println(logLoss)
-	    return logLoss
+      
+        println("Optimizigin for: " + a)
+	    cls.optimizer.setStepSize(a) 
+        //cls.optimizer.setRegParam(a)
+	    
+	    val means = for(i <-1 to 3 ) yield {
+	      
+	    val split = train.randomSplit(Array(0.75,0.25), i)  
+	    val model = cls.run(split(0))
+	    val pred = Ex.predictProb(model,split(1).map(_.features)).zip(split(1).map(_.label))    
+	    Eval.logLogs(pred)
+	      
+	    }
+	   val logLoss  = means.toList.reduce( _ + _)/means.size 
+	   println("Mean log loss:" + logLoss + " for: " + a)
+	   logLoss
     }
+    val optimize = false
+    if (optimize) {
+	    val optmizer = new org.apache.commons.math3.optim.univariate.BrentOptimizer(0.001, 0.0001)
+	    val result = optmizer.optimize(new MaxEval(20), 
+	    		new UnivariateObjectiveFunction(new UnivariateFunctionAdapter(goal)), 
+	    		GoalType.MINIMIZE, new SearchInterval(1,50))
+	    
+	    //val opa = optimize(1,200,0.0001)(goal)
+	    //val opa = goal(64.0)
+	    println("OptLearning Rate: " + result.getPoint() + " with value" + result.getValue())    
+	    //println("Log Loss: " + opa)  
+	    cls.optimizer.setStepSize(result.getPoint())
+    }
+    cls.optimizer.setNumIterations(200)
+    val finalModel = cls.run(train)
+    val finalPred = Ex.predictProb(finalModel,test.map(_.features)).zip(test.map(_.label))    
+    val finalLoss = Eval.logLogs(finalPred)
+    println("Final loss:" + finalLoss)
     
-    val opa = optimize(1,200,0.01)(goal)
-    println("OptLearning Rate: " + opa)
+    exit(0)
+    * 
+    */
   }
 
 }
